@@ -36,7 +36,13 @@ def load_data():
 
 @st.cache_data
 def load_zone_quality_data():
-    """존별 구종 품질 데이터 로드"""
+    """존별 구종 품질 데이터 로드 (통합 버전)"""
+    # 통합 데이터 우선 사용
+    integrated_path = DATA_DIR / 'pitcher_zone_quality_integrated.parquet'
+    if integrated_path.exists():
+        return pd.read_parquet(integrated_path)
+
+    # 기존 데이터 폴백
     zone_quality_path = DATA_DIR / 'pitcher_zone_quality.parquet'
     if zone_quality_path.exists():
         return pd.read_parquet(zone_quality_path)
@@ -239,7 +245,7 @@ def create_tier_breakdown_table(df, pitcher_pcode):
     return tier_pivot.reset_index()
 
 def create_zone_quality_heatmap(zone_df, pitch_type, batter_hand):
-    """5x5 존별 품질 히트맵 생성"""
+    """5x5 존별 품질 히트맵 생성 (통합 클래스)"""
     # 필터링
     filtered = zone_df[
         (zone_df['pitch_type'] == pitch_type) &
@@ -265,8 +271,13 @@ def create_zone_quality_heatmap(zone_df, pitch_type, batter_hand):
             zone_data = filtered[filtered['zone_id'] == zone_id]
 
             if len(zone_data) > 0:
-                avg_score = zone_data['avg_score'].iloc[0]
-                avg_class = zone_data['avg_class'].iloc[0]
+                # 통합 데이터 사용
+                if 'integrated_score' in zone_data.columns:
+                    avg_score = zone_data['integrated_score'].iloc[0]
+                    avg_class = zone_data['integrated_class'].iloc[0]
+                else:
+                    avg_score = zone_data.get('avg_score', zone_data.get('integrated_score')).iloc[0]
+                    avg_class = zone_data.get('avg_class', zone_data.get('integrated_class')).iloc[0]
                 count = zone_data['count'].iloc[0]
                 row_scores.append(avg_score)
                 row_texts.append(f"{avg_class}<br>({count})")
@@ -512,11 +523,17 @@ def main():
                 pitch_types = pitcher_zone_df['pitch_type'].value_counts().head(6).index.tolist()
 
                 st.info("""
-                📊 **존별 품질 해석**
-                - 5x5 그리드로 각 존에서의 평균 구속 티어를 표시
-                - 검은 사각형: 스트라이크존
-                - S(빨강) → A(주황) → B(노랑) → C(초록) → D(파랑)
-                - 괄호 안 숫자: 해당 존 투구 수
+                📊 **존별 통합 품질 클래스**
+
+                3가지 요소를 가중 평균하여 종합 평가:
+                1. **구속 티어**: 직구는 절대 구속, 변화구는 직구 대비 상대 구속
+                2. **무브먼트 티어**: 구종별 핵심 지표 (직구=라이징, 슬라이더=수평 무브, 체인지업=드롭)
+                3. **Whiff 티어**: 해당 존에서의 헛스윙률
+
+                **구종별 가중치**:
+                - 직구: 구속 50%, 무브 20%, Whiff 30%
+                - 체인지업/커브: 구속 10-20%, 무브 30-40%, Whiff 50%
+                - 슬라이더: 구속 30%, 무브 30%, Whiff 40%
                 """)
 
                 # 타자 핸드 선택
@@ -547,10 +564,19 @@ def main():
                 st.subheader("상세 데이터")
                 detail_df = pitcher_zone_df[pitcher_zone_df['batter_hand'] == batter_hand_option].copy()
                 detail_df = detail_df.sort_values(['pitch_type', 'zone_id'])
-                detail_df = detail_df[['pitch_type', 'zone_id', 'count', 'avg_class', 'avg_score',
-                                       'tier_S', 'tier_A', 'tier_B', 'tier_C', 'tier_D']]
-                detail_df.columns = ['구종', '존', '투구수', '평균클래스', '평균점수',
-                                     'S%', 'A%', 'B%', 'C%', 'D%']
+
+                # 통합 데이터 컬럼 확인
+                if 'integrated_class' in detail_df.columns:
+                    detail_df = detail_df[['pitch_type', 'zone_id', 'count',
+                                           'integrated_class', 'velocity_tier', 'movement_tier', 'whiff_tier',
+                                           'whiff_rate', 'avg_speed', 'avg_pfx_x', 'avg_pfx_z']]
+                    detail_df.columns = ['구종', '존', '투구수', '통합클래스',
+                                         '구속', '무브', 'Whiff', 'Whiff%',
+                                         '평균구속', 'pfx_x', 'pfx_z']
+                else:
+                    detail_df = detail_df[['pitch_type', 'zone_id', 'count', 'avg_class', 'avg_score']]
+                    detail_df.columns = ['구종', '존', '투구수', '평균클래스', '평균점수']
+
                 st.dataframe(detail_df, use_container_width=True, hide_index=True)
 
             else:
