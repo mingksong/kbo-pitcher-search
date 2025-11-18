@@ -314,7 +314,10 @@ def create_zone_quality_heatmap(zone_df, pitch_type, batter_hand):
         hoverongaps=False
     ))
 
-    # 스트라이크존 표시 (B-D, 2-4)
+    # 스트라이크존 표시 (B-D 높이, 2-4 좌우)
+    # x축: ['1','2','3','4','5'] → 존2는 인덱스1, 존4는 인덱스3
+    # y축: ['A','B','C','D','E'] → B는 인덱스1, D는 인덱스3
+    # 셀 경계를 그리기 위해 -0.5/+0.5 offset
     fig.add_shape(
         type="rect",
         x0=0.5, y0=0.5, x1=3.5, y1=3.5,
