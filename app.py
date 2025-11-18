@@ -320,7 +320,7 @@ def create_zone_quality_heatmap(zone_df, pitch_type, batter_hand):
     # 셀 경계를 그리기 위해 -0.5/+0.5 offset
     fig.add_shape(
         type="rect",
-        x0=0.5, y0=0.5, x1=3.5, y1=3.5,
+        x0=1.5, y0=0.5, x1=4.5, y1=3.5,
         line=dict(color="black", width=3)
     )
 
