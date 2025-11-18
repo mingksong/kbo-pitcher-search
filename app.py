@@ -35,6 +35,14 @@ def load_data():
     return pitches
 
 @st.cache_data
+def load_zone_quality_data():
+    """존별 구종 품질 데이터 로드"""
+    zone_quality_path = DATA_DIR / 'pitcher_zone_quality.parquet'
+    if zone_quality_path.exists():
+        return pd.read_parquet(zone_quality_path)
+    return None
+
+@st.cache_data
 def get_pitcher_list(df):
     """투수 목록 생성"""
     pitchers = df[['pitcher_pcode', 'pitcher_name', 'pitcher_hand']].drop_duplicates()
@@ -230,6 +238,89 @@ def create_tier_breakdown_table(df, pitcher_pcode):
 
     return tier_pivot.reset_index()
 
+def create_zone_quality_heatmap(zone_df, pitch_type, batter_hand):
+    """5x5 존별 품질 히트맵 생성"""
+    # 필터링
+    filtered = zone_df[
+        (zone_df['pitch_type'] == pitch_type) &
+        (zone_df['batter_hand'] == batter_hand)
+    ]
+
+    if len(filtered) == 0:
+        return None
+
+    # 5x5 그리드 생성
+    v_zones = ['E', 'D', 'C', 'B', 'A']  # 위에서 아래로
+    h_zones = ['1', '2', '3', '4', '5']
+
+    # 평균 스코어 매트릭스
+    score_matrix = []
+    text_matrix = []
+
+    for v in v_zones:
+        row_scores = []
+        row_texts = []
+        for h in h_zones:
+            zone_id = f"{v}{h}"
+            zone_data = filtered[filtered['zone_id'] == zone_id]
+
+            if len(zone_data) > 0:
+                avg_score = zone_data['avg_score'].iloc[0]
+                avg_class = zone_data['avg_class'].iloc[0]
+                count = zone_data['count'].iloc[0]
+                row_scores.append(avg_score)
+                row_texts.append(f"{avg_class}<br>({count})")
+            else:
+                row_scores.append(None)
+                row_texts.append("-")
+
+        score_matrix.append(row_scores)
+        text_matrix.append(row_texts)
+
+    # Plotly 히트맵
+    fig = go.Figure(data=go.Heatmap(
+        z=score_matrix,
+        x=h_zones,
+        y=v_zones,
+        text=text_matrix,
+        texttemplate="%{text}",
+        textfont={"size": 12},
+        colorscale=[
+            [0, '#3498db'],     # D (1)
+            [0.25, '#2ecc71'],  # C (2)
+            [0.5, '#f39c12'],   # B (3)
+            [0.75, '#e67e22'],  # A (4)
+            [1, '#e74c3c']      # S (5)
+        ],
+        zmin=1,
+        zmax=5,
+        showscale=True,
+        colorbar=dict(
+            title="품질",
+            tickvals=[1, 2, 3, 4, 5],
+            ticktext=['D', 'C', 'B', 'A', 'S']
+        ),
+        hoverongaps=False
+    ))
+
+    # 스트라이크존 표시 (B-D, 2-4)
+    fig.add_shape(
+        type="rect",
+        x0=0.5, y0=0.5, x1=3.5, y1=3.5,
+        line=dict(color="black", width=3)
+    )
+
+    fig.update_layout(
+        title=f"{pitch_type} - vs {'좌타자' if batter_hand == 'L' else '우타자'}",
+        xaxis_title="좌우 (1: 좌 ← → 5: 우)",
+        yaxis_title="높이",
+        height=400,
+        xaxis=dict(side="top"),
+        yaxis=dict(autorange="reversed")
+    )
+
+    return fig
+
 # ============================================================================
 # 메인 앱
 # ============================================================================
@@ -242,6 +333,7 @@ def main():
     with st.spinner('데이터 로딩 중...'):
         df = load_data()
         pitchers = get_pitcher_list(df)
+        zone_quality_df = load_zone_quality_data()
 
     st.success(f"✅ 데이터 로드 완료: {len(df):,}개 투구, {len(pitchers)}명 투수")
 
@@ -355,7 +447,7 @@ def main():
     st.markdown("---")
 
     # 탭 구성
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 연도별 분석", "🎯 구속 티어", "🌐 무브먼트", "📋 상세 통계"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 연도별 분석", "🎯 구속 티어", "🗺️ 존별 구종 품질", "🌐 무브먼트", "📋 상세 통계"])
 
     with tab1:
         st.subheader("연도별 구종 분포")
@@ -406,6 +498,67 @@ def main():
         st.dataframe(tier_table, use_container_width=True, hide_index=True)
 
     with tab3:
+        st.subheader("존별 구종 품질 프로파일")
+
+        if zone_quality_df is not None:
+            # 해당 투수의 존 품질 데이터 필터링
+            pitcher_zone_df = zone_quality_df[
+                (zone_quality_df['pitcher_pcode'] == pitcher_pcode) &
+                (zone_quality_df['season_year'].isin(season_filter))
+            ]
+
+            if len(pitcher_zone_df) > 0:
+                # 구종 목록
+                pitch_types = pitcher_zone_df['pitch_type'].value_counts().head(6).index.tolist()
+
+                st.info("""
+                📊 **존별 품질 해석**
+                - 5x5 그리드로 각 존에서의 평균 구속 티어를 표시
+                - 검은 사각형: 스트라이크존
+                - S(빨강) → A(주황) → B(노랑) → C(초록) → D(파랑)
+                - 괄호 안 숫자: 해당 존 투구 수
+                """)
+
+                # 타자 핸드 선택
+                batter_hand_option = st.radio(
+                    "타자 핸드",
+                    options=['R', 'L'],
+                    format_func=lambda x: '우타자' if x == 'R' else '좌타자',
+                    horizontal=True,
+                    key='zone_batter_hand'
+                )
+
+                # 2열로 구종별 히트맵 표시
+                cols = st.columns(2)
+
+                for i, pitch_type in enumerate(pitch_types):
+                    with cols[i % 2]:
+                        fig = create_zone_quality_heatmap(
+                            pitcher_zone_df,
+                            pitch_type,
+                            batter_hand_option
+                        )
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info(f"{pitch_type}: 데이터 없음")
+
+                # 상세 데이터 테이블
+                st.subheader("상세 데이터")
+                detail_df = pitcher_zone_df[pitcher_zone_df['batter_hand'] == batter_hand_option].copy()
+                detail_df = detail_df.sort_values(['pitch_type', 'zone_id'])
+                detail_df = detail_df[['pitch_type', 'zone_id', 'count', 'avg_class', 'avg_score',
+                                       'tier_S', 'tier_A', 'tier_B', 'tier_C', 'tier_D']]
+                detail_df.columns = ['구종', '존', '투구수', '평균클래스', '평균점수',
+                                     'S%', 'A%', 'B%', 'C%', 'D%']
+                st.dataframe(detail_df, use_container_width=True, hide_index=True)
+
+            else:
+                st.warning("해당 시즌의 존별 품질 데이터가 없습니다.")
+        else:
+            st.warning("존별 구종 품질 데이터가 로드되지 않았습니다.")
+
+    with tab4:
         st.subheader("구종별 무브먼트 분포")
         fig3 = plot_movement_scatter(filtered_df, pitcher_pcode)
         st.plotly_chart(fig3, use_container_width=True)
@@ -430,7 +583,7 @@ def main():
             - 커브: 대부분 음수
             """)
 
-    with tab4:
+    with tab5:
         st.subheader("전체 상세 통계")
 
         # 투구 분류별 상위 20개
