@@ -456,7 +456,7 @@ def main():
 
         st.subheader("구종별 통계")
         stats_table = create_pitch_stats_table(filtered_df, pitcher_pcode)
-        st.dataframe(stats_table, width='stretch', hide_index=True)
+        st.dataframe(stats_table, use_container_width=True, hide_index=True)
 
     with tab2:
         st.subheader("구종별 구속 티어 분포")
@@ -495,7 +495,7 @@ def main():
 
         st.subheader("구종별 티어 분포 상세 (숫자)")
         tier_table = create_tier_breakdown_table(filtered_df, pitcher_pcode)
-        st.dataframe(tier_table, width='stretch', hide_index=True)
+        st.dataframe(tier_table, use_container_width=True, hide_index=True)
 
     with tab3:
         st.subheader("존별 구종 품질 프로파일")
@@ -551,7 +551,7 @@ def main():
                                        'tier_S', 'tier_A', 'tier_B', 'tier_C', 'tier_D']]
                 detail_df.columns = ['구종', '존', '투구수', '평균클래스', '평균점수',
                                      'S%', 'A%', 'B%', 'C%', 'D%']
-                st.dataframe(detail_df, width='stretch', hide_index=True)
+                st.dataframe(detail_df, use_container_width=True, hide_index=True)
 
             else:
                 st.warning("해당 시즌의 존별 품질 데이터가 없습니다.")
@@ -592,7 +592,7 @@ def main():
         pitch_labels['비율 (%)'] = (pitch_labels['투구 수'] / len(filtered_df) * 100).round(1)
 
         st.markdown("**가장 많이 사용하는 투구 (Top 20)**")
-        st.dataframe(pitch_labels, width='stretch', hide_index=True)
+        st.dataframe(pitch_labels, use_container_width=True, hide_index=True)
 
         # 무브먼트 통계
         st.markdown("**무브먼트 통계**")
@@ -608,10 +608,10 @@ def main():
         col1, col2 = st.columns(2)
 
         with col1:
-            st.dataframe(h_movement, width='stretch', hide_index=True)
+            st.dataframe(h_movement, use_container_width=True, hide_index=True)
 
         with col2:
-            st.dataframe(v_movement, width='stretch', hide_index=True)
+            st.dataframe(v_movement, use_container_width=True, hide_index=True)
 
     # 푸터
     st.markdown("---")
